@@ -1,0 +1,5 @@
+.ipynb_checkpoints/
+ProjectSubComponents/
+*.ipynb
+categorical_columns.csv
+*.docx

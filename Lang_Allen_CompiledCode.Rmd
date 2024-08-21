@@ -1,0 +1,690 @@
+---
+title: 'Final Project: Compiled Code'
+author: "Allen Lang (al8he)"
+date: "5/11/2021"
+output: html_document
+---
+```{r}
+library(dplyr)
+```
+
+# Data Wrangling
+Using "file.choose()" to obtain absolute filepath for my CSV file. Importing from my STAT 1601's Final Project folder.
+```{r}
+league_csv<-read.csv("C:\\Users\\Allen\\Desktop\\STAT1601\\Final Project\\high_diamond_ranked_10min.csv")
+```
+
+## **Data Cleaning**
+### _Type Conversion_
+Looking at the csv using glimpse, I find that none were inputted as factor variables. This is good as I wanted all of my variables to be inputted as a numerical variable type, either a double or an int. I do not need to do any type conversion. However, I do intend on doing type conversions on some columns to produce new columns that look more like categorical variables. 
+```{r}
+glimpse(league_csv)
+```
+
+### _Mutating numerical variables to categorical_
+As described in the dataset and description deliverable, I plan on converting the following column(s) into four categorical variables:
+
+  + blueWins: convert into column that says which team won
+  + blueFirstBlood/redFirstBlood: combine into column that says which team (or neither) got first blood
+  + blueDragons/redDragons: combine into column that says which team (or neither) got first blood got dragon
+  + blueHerald/redHerald: combine into column that says which team (or neither) got rift herald
+  
+
+#### Team Wins
+blueWins column shows 1 if blue team won, or 0 if red team won. Mutate a new column in which it will say "Blue" if 1 or "Red" if 0. Using head function, I can verify that this conversion is working properly.
+```{r}
+wins = league_csv%>%select(blueWins)
+wins = wins%>%mutate(TeamWin=ifelse(blueWins==1, "Blue", "Red"))
+head(wins,6)
+```
+
+#### Dragons
+blueDragons column gives a 1 if blue team got dragon, 0 if it did not. This is same for redDragons. Mutate a new column that says "Blue" if blueDragons is 1, "Red" if redDragons is 1, or "Neither" if none of those applies. As explained in the dataset description, it is impossible to obtain two dragons in first 10 minutes of a game, so either blue or red team got it or it was not taken. Using head(), this conversion is verified as it shows "Neither" if there is no 1 in either column.
+```{r}
+dragons = league_csv%>%select(blueDragons,redDragons)
+dragons = dragons%>%mutate(Dragon=ifelse(blueDragons==1,"Blue",ifelse(redDragons==1,"Red","Neither")))
+head(dragons,4)
+```
+
+#### Rift Heralds
+blueHeralds column gives a 1 if blue team got herald, 0 if it did not. This is same for redHeralds. Mutate a new column that says "Blue" if blueHeralds is 1, "Red" if redHeralds is 1, or "Neither" if none of those applies. As explained in the dataset description, it is impossible to obtain two rift heralds in first 10 minutes of a game, so either blue or red team got it or it was not taken. Using head(), this conversion is verified as it shows "Neither" if there is no 1 in either column.
+```{r}
+heralds=league_csv%>%select(blueHeralds,redHeralds)
+heralds=heralds%>%mutate(Herald=ifelse(blueHeralds==1,"Blue",ifelse(redHeralds==1,"Red","Neither")))
+head(heralds,4)
+```
+
+#### First Blood
+This follows same reasoning as the two above it. Mutate a new column that says "Blue" if blueFirstBlood is 1, "Red" if redFirstBlood is 1, or "Neither" is both happen to be 0. Only one team can get first blood. Using head(), this conversion is verified as it shows "Neither" if there is no 1 in either column. Although it is possible to have no first blood drawn in first 10 minutes of a game, the table function shows that all of these games had a first blood before 10 minutes.
+```{r}
+firstbloods=league_csv%>%select(blueFirstBlood,redFirstBlood)
+firstbloods=firstbloods%>%mutate(FirstBlood=ifelse(blueFirstBlood==1,"Blue",ifelse(redFirstBlood==1,"Red","Neither")))
+head(firstbloods,4)
+table(firstbloods$FirstBlood)
+```
+
+Now that it has been verified that the conversions were correct, remove the original columns and keep only the 4 revised ones.
+```{r}
+revised_categorical = cbind(TeamWin=wins$TeamWin, Dragon=dragons$Dragon, Herald=heralds$Herald, FirstBlood=firstbloods$FirstBlood)
+head(revised_categorical,6)
+```
+
+Now combine it with the original csv while removing the original columns.
+```{r}
+revised_league_csv = cbind(revised_categorical,league_csv)
+revised_league_csv = revised_league_csv%>%select(-c(blueWins, blueFirstBlood, redFirstBlood, blueHeralds, redHeralds, blueDragons, redDragons))
+head(revised_league_csv,3)
+```
+
+### _Removing less relevant columns_
+Some columns are irrelevant, such as the gameID (which was taken from the API). Others were chosen to not be as relevant as the ones explained in the dataset description deliverable. Others are similar to others. For example, CSPerMin and GoldPerMin are just the TotalMinionsKilled and TotalGold columns divided by 10. 
+```{r}
+revised_league_csv = revised_league_csv%>%
+  select(-c(gameId, redGoldDiff, #blueTotalGold, redTotalGold, 
+            blueGoldPerMin, redGoldPerMin, blueCSPerMin, redCSPerMin,
+            redExperienceDiff, #blueTotalExperience, redTotalExperience,
+            blueEliteMonsters, redEliteMonsters, blueDeaths, redDeaths
+            ))
+head(revised_league_csv,3)
+```
+
+### _Combining continuous variables into differences_
+Continuous variable columns like blueKills and redKills are similar variables that describe each team's condition. However, they would be more useful if they are combined into one column. For this project, pairs of columns such as blueKills/redKills will be combined by taking the difference of the blue column and the corresponding red column (blue-red). This means a positive value will mean blue team has more, while negative means red team has more.
+```{r}
+revised_league_csv = revised_league_csv%>%
+  mutate(TowersDiff=blueTowersDestroyed-redTowersDestroyed)%>%
+  mutate(WardsPlacedDiff=blueWardsPlaced-redWardsPlaced)%>%
+  mutate(WardsDestDiff=blueWardsDestroyed-redWardsDestroyed)%>%
+  mutate(KillDiff=blueKills-redKills)%>%
+  mutate(AssistDiff=blueAssists-redAssists)%>%
+  mutate(MinionsDiff=blueTotalMinionsKilled-redTotalMinionsKilled)%>%
+  mutate(JungleMinDiff=blueTotalJungleMinionsKilled-redTotalJungleMinionsKilled)%>%
+  mutate(LevelsDiff=blueAvgLevel-redAvgLevel)
+revised_league_csv = revised_league_csv%>%
+  rename(GoldDiff=blueGoldDiff,ExpDiff=blueExperienceDiff,
+         blueJungleMin=blueTotalJungleMinionsKilled,redJungleMin=redTotalJungleMinionsKilled,
+         blueMinions=blueTotalMinionsKilled,redMinions=redTotalMinionsKilled,
+         blueTowers=blueTowersDestroyed,redTowers=redTowersDestroyed)
+write.csv(revised_league_csv,"C:\\Users\\Allen\\Desktop\\STAT1601\\Final Project\\revised_league.csv")
+head(revised_league_csv,3)
+```
+
+## **Summary measures of variables and by groups**
+### _Categorical Variables_
+For the entire dataset, the red team won 19 more games than the blue team did. This is a marginal amount higher than 50% winrate. There is almost 10000 games here, so it is good that the winrate is almost balanced because in a ranked game, players are put on red or blue side at random. It would be unfair if somehow blue teams won more often than red teams since players cannot choose their own teams. Oddly, the blue team had more first bloods, but less wins than red team. This makes sense since it is just one kill really early into the game, and things could change afterwards.
+```{r}
+table(revised_league_csv$TeamWin)
+table(revised_league_csv$FirstBlood)
+```
+
+Looking at the two-way table, it can be seen that if blue team wins more games if it gets firstblood and vice versa for red. However, the split is not completely one-sided, so not getting first blood does not mean you will lose the game. For both red and blue, the ratio of win/loss to firstblood/not firstblood is the same at 3 to 2. Getting first blood increases your chance to win by 50%.
+```{r}
+revised_league_csv%>%select(TeamWin,FirstBlood)%>%table()
+```
+
+Teams seem prioritize Dragon over Herald in first 10 minutes, as there were way more games when neither team took herald than dragon. The blue team did get more heralds than the red team did, and the red team got more dragons than the blue team did. The two way table shows an interesting point regarding trading. Sometimes teams will commit more resources to the top half (herald) than the bottom half (dragon), so if one team takes dragon then another takes herald. This is seen in bottom row: more games where red team takes dragon but blue takes herald than red team taking both. However, in first row, there are more games where blue team takes both dragon and herald than where blue gets dragon and red gets herald.
+```{r}
+table(revised_league_csv$Dragon)
+table(revised_league_csv$Herald)
+revised_league_csv%>%select(Dragon,Herald)%>%table()
+```
+
+### _Numerical Variables_
+I felt that the two key numerical variables were difference in gold and difference in experience. Even though blue team on average had more gold than red team, the red team had on average had more experience than the blue team. However, this difference is marginal as 14 gold and 33 experience is not a lot.
+```{r}
+revised_league_csv%>%summarise(mean(GoldDiff),sd(GoldDiff),mean(ExpDiff),sd(ExpDiff))
+```
+
+For minions and jungle minions as well as kills and assists, I found that they had a similar trend as all of them were really close to 0. This means that the games were balanced.
+```{r}
+revised_league_csv%>%summarise(mean(MinionsDiff),sd(MinionsDiff),mean(JungleMinDiff),sd(JungleMinDiff))
+```
+```{r}
+revised_league_csv%>%summarise(mean(KillDiff),IQR(KillDiff),mean(AssistDiff),IQR(AssistDiff))
+```
+
+For wards, I found that red team slightly placed more than blue on average while blue destroyed more on average than red. However, if I used median, then I find that both teams, most of the time, placed and destroyed an equal amount in first 10 minutes. Perhaps wards are not that important. 
+```{r}
+revised_league_csv%>%summarise(median(WardsPlacedDiff),IQR(WardsPlacedDiff),median(WardsDestDiff),IQR(WardsDestDiff))
+```
+
+### _By Groups_
+When grouping by which team won, it can be seen the team that leads in gold, experience, minionskilled, and kills by 10 minutes will end up winning the game. This means not a lot of games have a comeback where the team from behind at 10 minutes will end up winning the game.
+```{r}
+revised_league_csv%>%group_by(TeamWin)%>%summarise(mean(GoldDiff),mean(MinionsDiff),mean(ExpDiff),mean(WardsPlacedDiff))
+```
+For both dragon and herald, it seemed that the team that got the objective was already ahead at 10 minutes in all metrics of the game. Either teams get ahead because they take these objectives, or they take these objectives because they are ahead. In my experience, it would probably be the latter. An interesting observation is that blue teams places far less wards when they get herald than when the red team gets herald. Since more games occurred when blue team got herald than red team, perhaps the blue team gets herald easier than red team. 
+
+```{r}
+revised_league_csv%>%group_by(Dragon)%>%summarise(mean(GoldDiff),mean(MinionsDiff),mean(ExpDiff),mean(WardsPlacedDiff))
+```
+
+```{r}
+revised_league_csv%>%group_by(Herald)%>%summarise(mean(GoldDiff),mean(MinionsDiff),mean(ExpDiff),mean(WardsPlacedDiff))
+```
+First blood seems to echo the same trend as before: first blood seems to lean towards the team with other advantages. 
+```{r}
+revised_league_csv%>%group_by(FirstBlood)%>%summarise(mean(GoldDiff),mean(MinionsDiff),mean(ExpDiff),mean(WardsPlacedDiff))
+```
+
+Looking instead at aggregate instead of differences, it seems that teams need at least 17000 gold and 18000 experience before 10 minutes to win a game. The losing team never manages to hit that mark. For killing minions and jungle monsters, teams need at least 220 minions, about 10 more than the losing team manages to get before 10 minutes. For jungle monsters, there difference is very small, suggesting that it is not a good indication of who might later win the game. 
+```{r}
+revised_league_csv%>%group_by(TeamWin)%>%summarise(mean(blueTotalGold),mean(blueTotalExperience),mean(redTotalGold),mean(redTotalExperience))
+```
+```{r}
+revised_league_csv%>%group_by(TeamWin)%>%summarise(mean(blueMinions),mean(blueJungleMin),mean(redMinions),mean(redJungleMin))
+```
+
+## **Filtering**
+### _How important are destroying towers before 10 minutes?_
+Filtering by towers destroyed greater than 0, so when blue team has destroyed more towers. This shows much more significant differences in experience, gold, and minions killed. The same exists when filtering if red team has tower advantage. This suggests that teams that manage to take down a tower before 10 minutes accrue massive advantages. Compared to the first blood two way table, the team that gets first tower has a higher chance of winning (about 3 to 1 versus first blood's 3 to 2 ratio). 
+```{r}
+bluetoweradv = revised_league_csv%>%filter(TowersDiff>0)
+bluetoweradv%>%summarise(mean(GoldDiff),mean(MinionsDiff),mean(ExpDiff),mean(WardsPlacedDiff))
+bluetoweradv%>%select(TeamWin)%>%table()
+```
+```{r}
+redtoweradv=revised_league_csv%>%filter(TowersDiff<0)
+redtoweradv%>%summarise(mean(GoldDiff),mean(MinionsDiff),mean(ExpDiff),mean(WardsPlacedDiff))
+redtoweradv%>%select(TeamWin)%>%table()
+```
+
+### _If I reach this gold and experience threshold, how many minions have I killed?_
+Going off of the previous section, we see how many teams with at least 17000 gold and 18000 experience have done in regards to farming minions. The number of minions killed when having this advantage seems to be 226, and the chance of winning is now about 10 to 3. 
+```{r}
+bluegoldxpadv = revised_league_csv%>%filter(blueTotalExperience >= 18000 & blueTotalGold >= 17000)
+bluegoldxpadv%>%summarise(mean(blueJungleMin),mean(blueMinions),mean(redJungleMin),mean(redMinions))
+bluegoldxpadv%>%select(TeamWin)%>%table()
+```
+
+```{r}
+redgoldxpadv = revised_league_csv%>%filter(redTotalExperience >= 18000 & redTotalGold >= 17000)
+redgoldxpadv%>%summarise(mean(blueJungleMin),mean(blueMinions),mean(redJungleMin),mean(redMinions))
+redgoldxpadv%>%select(TeamWin)%>%table()
+```
+
+
+### _If I am one level higher than my opponent, will it help me get dragons and heralds more?_
+Higher levels means that the Smite summoner spell, used to deal a lot of damage to minions and often used to securely kill herald and dragons and prevent it from being stolen, will become stronger. If a blue team jungler is higher level than red team's, then the blue team jungler has a stronger smite. Does that translate to more heralds and dragons being taken? Are teams encouraged to take these neutral objectives more?
+
+The biggest difference seems to be that the team with level advantage farms much more jungle minions than the other team. Another trend is that, even with a level advantage, teams still do not like to take the rift herald. For dragons, the level advantage seems to encourage the better team to take the dragon, as the ratio is around 4 to 1. 
+```{r}
+blueleveladv = revised_league_csv%>%filter(LevelsDiff >= 1.0)
+blueleveladv%>%summarise(mean(blueJungleMin),mean(redJungleMin))
+blueleveladv%>%select(Dragon)%>%table()
+blueleveladv%>%select(Herald)%>%table()
+```
+```{r}
+redleveladv = revised_league_csv%>%filter(LevelsDiff <= -1.0)
+redleveladv%>%summarise(mean(blueJungleMin),mean(redJungleMin))
+redleveladv%>%select(Dragon)%>%table()
+redleveladv%>%select(Herald)%>%table()
+```
+
+# Data Visualization
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+```
+
+
+After the data wrangling portion, a new csv file was created called "revised_league.csv" which has been cleaned and modified with new variables. Using "file.choose()" to obtain absolute filepath for my CSV file. Importing from my STAT 1601's Final Project folder.
+```{r}
+league_csv<-read.csv("C:\\Users\\Allen\\Desktop\\STAT1601\\Final Project\\revised_league.csv")
+```
+
+
+## Single Categorical (Bar Graph)/Single Numerical (Histogram)
+### Single Cat: First Blood
+Based on the data wrangling part, the distribution of wins between red and blue team was very even. Thus, it would not be very interesting to plot that since both would be close to 50%. Moving onto first bloods a new dataframe is made that counts first blood drawn from each side and converts it into a percentage. Unlike the teamwins variable, the firstblood bar graph actually shows the blue team to have a slightly higher percentage than that of red team. The map is mostly symmetrical, but perhaps this means that blue team gets first bloods easier.
+
+I used R documentation for help on manually choosing the colors I wanted: http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/.
+```{r}
+fb_csv<-league_csv%>%group_by(FirstBlood)%>%summarize(Counts=n())%>%mutate(fbperc=Counts/nrow(league_csv))
+ggplot(data=fb_csv, aes(x=FirstBlood,y=fbperc,fill=FirstBlood))+
+  geom_bar(stat='identity')+scale_fill_manual(values=c("blue","red"))+
+  labs(x="Team",y="Percentage of First Bloods",title="Percentage of First Bloods before 10 minutes")
+```
+
+### Single Cat: Neutral Objectives, Dragon and Herald
+Based on the game mechanics, only one dragon and herald can be taken before 10 minutes. For dragon, it seems that red team takes the dragon more often than the blue team does (40% to 36%). Around 24% of the games see neither teams taking the dragon. Whereas the firstblood result was less clear, the red team seems to clearly get the first dragon more often than blue. This suggests it is easier for red team to get dragon, moreso than blue team and firstblood.
+```{r}
+drag_csv<-league_csv%>%group_by(Dragon)%>%summarize(Counts=n())%>%mutate(dragperc=Counts/nrow(league_csv))
+ggplot(data=drag_csv, aes(x=Dragon,y=dragperc,fill=Dragon))+
+  geom_bar(stat='identity')+scale_fill_manual(values=c("blue","darkgray","red"))+
+  labs(x="Team",y="Percentage of Dragons Taken",title="Percentage of Dragons taken before 10 minuites")
+```
+
+For herald, blue team gets rift herald slightly more often than red team. However, the vast majority of games show that rift herald is taken by neither team in the first 10 minutes (over 60%). This could suggest the rift herald is not as valuable in the eyes of both teams compared to the dragon. Alternatively, the first dragon spawns at 6 minutes while the first herald spawns at 8 minutes. This means teams have 4 minutes to take dragon before 10 minutes while only 2 minutes to take herald. Teams may simply not have enough time.
+```{r}
+herald_csv<-league_csv%>%group_by(Herald)%>%summarize(Counts=n())%>%mutate(heraldperc=Counts/nrow(league_csv))
+ggplot(data=herald_csv, aes(x=Herald,y=heraldperc,fill=Herald))+
+  geom_bar(stat='identity')+scale_fill_manual(values=c("blue","darkgray","red"))+
+  labs(x="Team",y="Percentage of Heralds Taken",title="Percentage of Heralds taken before 10 minuites")
+```
+
+### Single Numerical: Gold and Experience Differences
+To make histograms, take the square root of the total number of observations to get an satisfactory bin number. For this, around 100 bins will work.
+```{r}
+print(sqrt(nrow(league_csv)))
+```
+
+The Gold differential shows the difference in team gold at 10 minutes. Positive difference means blue team has more and vice versa for negative difference. This will be the case for all "difference" variables: blue team - red team. The shape appears to be symmetric/normal distribution with little outliers. The mean, median, and mode appear to be around 0, so neither team having an advantage. The spread ranges from -10000 to around 8000. The red team appears to have more games in which they are very far ahead (-8000 to -1000) than the blue team as the left side of the graph has little bit more bars than the right side.
+```{r}
+ggplot(data=league_csv, aes(x=GoldDiff))+geom_histogram(bins=100,fill="gold",color="black")+
+  theme(plot.title=element_text(hjust=0.5))+
+  labs(x="Gold difference (blue-red)",y="Number of games",title="Team Gold differential at 10 minutes")
+```
+
+The experience differential has a similar symmetric shape with little outliers. The mean, median, and mode also appear at around 0. The spread ranges from -10000 to 7000. The red team also appears to have more games in which the experience gap is in their favor (-10000 to -8000), so much that the plot does not even even have a axis label for 10000. From this graph and the one above, red team has more games in which they win harder at 10 minutes.
+```{r}
+ggplot(data=league_csv, aes(x=ExpDiff))+geom_histogram(bins=100,fill="purple",color="black")+
+  theme(plot.title=element_text(hjust=0.5))+
+  labs(x="Exp difference (blue-red)",y="Number of games",title="Team Experience differential at 10 minutes")
+```
+
+## Categorical-Numerical (Side-by-side boxplots) and Numerical-Numerical (Scatterplots)
+### Categorical-Numerical: First Blood
+For the team that got first blood, the gold diff and exp diff would favor them at 10 minutes. However, the median difference from 0 for gold diff was larger than the median difference from 0 for exp diff. This suggests that first blood might impact the gold gains more than the experience gain even though both are impacted. Both have the similar shape, spread distribution as the histogram above. There are some outliers for both grpahs.
+```{r}
+ggplot(data=league_csv, aes(x=FirstBlood,y=GoldDiff,color=FirstBlood))+geom_boxplot()+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","red"))+
+  labs(x="Team that got First Blood",y="Gold Difference",title="Team with first blood and the resulting gold difference")
+```
+
+```{r}
+ggplot(data=league_csv, aes(x=FirstBlood,y=ExpDiff,color=FirstBlood))+geom_boxplot()+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","red"))+
+  labs(x="Team that got First Blood",y="Exp Difference",title="Team with first blood and the resulting experience difference")
+```
+
+### Categorical-Numerical: Dragons and Heralds on Gold Diff
+For teams that got dragon or herald first, they also get a gold advantage at first 10 minutes. For games where neither team took dragon or herald, the median gold difference was actually 0. This makes sense as an even game might not have teams so easily take objectives. However, if teams get a neutral objective, then they have a gold difference. It is not clear about causation, so it cannot be said whether gold differences make dragons/heralds easier to take or vice versa.
+```{r}
+ggplot(data=league_csv, aes(x=Dragon,y=GoldDiff,color=Dragon))+geom_boxplot()+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","darkgray","red"))+
+  labs(x="Team that got Dragon",y="Gold Difference",title="Team with Dragon and the resulting gold difference")
+```
+
+```{r}
+ggplot(data=league_csv, aes(x=Herald,y=GoldDiff,color=Herald))+geom_boxplot()+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","darkgray","red"))+
+  labs(x="Team that got Herald",y="Gold Difference",title="Team with Herald and the resulting gold difference")
+```
+
+### Categorical-Numerical: Placing Wards on taking dragons
+A numerical variable that seems to have a very even spread is the wards placed variable. The interquartile range appears to be very small as both teams seem to place equal amount of wards. There are a lot of outliers.
+```{r}
+ggplot(data=league_csv, aes(x=Dragon,y=WardsPlacedDiff,color=Dragon))+geom_boxplot()+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","darkgray","red"))+
+  labs(x="Team that got Dragon",y="Wards Placed Difference",title="Team with dragon and the wards placed gold difference")
+```
+
+### Numerical-Numerical: Key Metrics
+The two most important metrics, gold and experience, are plotted together. Teams with gold advantages have experience advantages.
+```{r}
+ggplot(data=league_csv, aes(x=ExpDiff,y=GoldDiff))+geom_point(alpha=0.5,color='orange')+
+  theme(plot.title=element_text(hjust=0.5))+
+  labs(x="Team Experience Difference",y="Team Gold Difference",title="Gold and Experience Difference")
+```
+
+Farming minions is an important part of the game. Teams with higher minion counts also have higher gold counts.
+```{r}
+ggplot(data=league_csv, aes(x=MinionsDiff,y=GoldDiff))+geom_point(alpha=0.5,color='orange')+
+  theme(plot.title=element_text(hjust=0.5))+
+  labs(x="Total minions Difference",y="Team Gold Difference",title="Total Minion and Gold Difference")
+```
+
+
+### Numerical-Numerical: Jungle Minions
+Jungle Min Diff does not appear to be related to any other metrics. The scatterplot shows even gold diff. Even between minions and jungle minion differences, there is not relation. It can be argued that teams spend time attacking other champions or obtaining neutral objectives will sacrifice jungle farm, so a team that is ahead might not be ahead in jungle minions. However, teams that are ahead might bully the other team and take away the other team's jungle minions.
+```{r}
+ggplot(data=league_csv, aes(x=JungleMinDiff,y=GoldDiff))+geom_point(alpha=0.5,color='darkgreen')+
+  theme(plot.title=element_text(hjust=0.5))+
+  labs(x="Jungle Minion Difference",y="Team Gold Difference",title="Gold Difference and Jungle Minions")
+```
+
+```{r}
+ggplot(data=league_csv, aes(x=JungleMinDiff,y=MinionsDiff))+geom_point(alpha=0.5,color='green')+
+  theme(plot.title=element_text(hjust=0.5))+
+  labs(x="Jungle Minion Difference",y="Total Minion Difference",title="Total Minions and Jungle Minions")
+```
+
+### Numerical-Numerical: Other
+It is said that 'wards save lives': having more of the map illuminated can help track the movements of the enemy team and ensure safety for your team. The relationship does not seem to be as evident from this plot.
+```{r}
+ggplot(data=league_csv, aes(x=WardsDestDiff,y=KillDiff))+geom_point(color='pink')+
+  theme(plot.title=element_text(hjust=0.5))+
+  labs(x="Destroyed Wards Difference",y="Total Kill Diff",title="Champion Kills difference and destroyed wards difference")
+```
+
+## Three or more variables (Bubble)
+### Team Win
+For the team that ended up winning the game, the teams had larger gold and experience advantages. Bottom left means red team advantage and top right means blue team advantage. The further it goes to either of those ends, the more the dots are colored in the teams that are favored.
+```{r}
+ggplot(data=league_csv, aes(x=GoldDiff,y=ExpDiff, color=TeamWin))+geom_point(alpha=0.25,position="jitter")+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","red"))+
+  labs(x="Gold Diff",y="Experience Diff",title="Gold and Exp difference based on who won the game")
+```
+
+
+### Neutral Objectives: Dragon and Herald
+Generally, the team that takes dragon and herald before 10 minutes goes on to have an experience and gold difference.
+```{r}
+ggplot(data=league_csv, aes(x=GoldDiff,y=ExpDiff, color=Dragon))+geom_point(alpha=0.25,position="jitter")+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","black","red"))+
+  labs(x="Gold Diff",y="Experience Diff",title="Gold and Exp difference based on who took dragon")
+```
+```{r}
+ggplot(data=league_csv, aes(x=GoldDiff,y=ExpDiff, color=Herald))+geom_point(alpha=0.25,position="jitter")+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","black","red"))+
+  labs(x="Gold Diff",y="Experience Diff",title="Gold and Exp difference based on who took herald")
+```
+
+When teams take the dragon, it usually means that the teams have an advantage in the jungle minions killed as well as the level difference (stronger smite from the jungler). However, for herald, since a lot of games have neither team taking it, there is less of a correlation.
+```{r}
+ggplot(data=league_csv, aes(x=LevelsDiff,y=JungleMinDiff, color=Dragon))+geom_point(alpha=0.25)+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","black","red"))+
+  labs(x="Levels Diff",y="Jungle Minion Diff",title="Level and Jungle Minion differences based on who took dragon")
+```
+
+```{r}
+ggplot(data=league_csv, aes(x=LevelsDiff,y=JungleMinDiff, color=Herald))+geom_point(alpha=0.25)+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","black","red"))+
+  labs(x="Levels Diff",y="Jungle Minion Diff",title="Level and Jungle Minion differences based on who took herald")
+```
+
+### Other
+When plotting the minion differential as a size variable, the bigger minion differences (blue team favored) are in the top right while the smaller differences (red team favored) are in the bottom left.
+```{r}
+ggplot(data=league_csv, aes(x=GoldDiff,y=ExpDiff, size=MinionsDiff))+geom_point(alpha=0.1)+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","black","red"))+
+  scale_size(range=c(0.1,3))+
+  labs(x="Gold Diff",y="Experience Diff",title="Gold and Exp difference and minion differences")
+```
+
+When plotting the two different minion metrics together along with team that won, there is no split between top right and bottom left. Red team can win the game even with a minion disadvantage in the jungle and in total minions and vice versa for blue.
+```{r}
+ggplot(data=league_csv, aes(x=MinionsDiff,y=JungleMinDiff, color=TeamWin))+geom_point(alpha=0.1)+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","red"))+
+  labs(x="Minion Diff",y="Jungle Minion Diff",title="Minion and Jungle Minion differences based on who won the game")
+```
+
+The wards placed and destroyed differences plot has an odd shape. As the games with little to no ward placed differences had the greatest amount of wards destroyed difference. This means teams placed equal amounts of wards, but somehow one team was sweeping and destroying them while the other did not. There seems to be no correlation with either and the team that won the game in the end.
+```{r}
+ggplot(data=league_csv, aes(x=WardsPlacedDiff,y=WardsDestDiff, color=TeamWin))+geom_point(alpha=0.1)+
+  theme(plot.title=element_text(hjust=0.5))+scale_color_manual(values=c("blue","red"))+
+  labs(x="Wards Placed Diff",y="Wards Destroyed Diff",title="Wards Placed and Destroyed Differences based on who won the game")
+```
+
+## Special Plots
+Converting the bar graphs into pie charts, it can be seen that neither team takes the herald (although blue team takes herald more than red), while red team takes the dragon more often than the blue team.
+```{r}
+ggplot(league_csv,aes(x=Herald,fill=Herald))+geom_bar()+coord_polar()+scale_fill_manual(values=c("blue","darkgray","red"))+
+  labs(title="Percentage of games where blue, red, or neither team got rift herald")
+```
+
+```{r}
+ggplot(league_csv,aes(x=Dragon,fill=Dragon))+geom_bar()+coord_polar()+scale_fill_manual(values=c("blue","darkgray","red"))+
+  labs(title="Percentage of games where blue, red, or neither team got dragon")
+```
+
+When looking at a heatmap and towers destroyed, the largest tower difference seemed to be when neither dragon nor herald was taken. It also makes sense that the dark blue would favor the left (red team destroy more towers) and vice versa. The shades of blue also seem more accentuated at either end for the herald graph compared to the dragon graph. Herald does help take towers. 
+```{r}
+ggplot(league_csv,aes(x=TowersDiff,y=Herald,fill=GoldDiff))+geom_tile()+
+  labs(x="Towers Destroyed Difference",y="Team that got herald",title="Gold difference based on rift herald and tower difference")
+```
+
+
+```{r}
+ggplot(league_csv,aes(x=TowersDiff,y=Dragon,fill=GoldDiff))+geom_tile()+
+  labs(x="Towers Destroyed Difference",y="Team that got dragon",title="Gold difference based on dragon and tower difference")
+```
+
+
+
+# Regression
+
+I found a way to prevent the warnings from including packages like dplyr and MASS, and I have put it in my markdown file. Source: https://rmarkdown.rstudio.com/lesson-3.html
+
+```{r message=FALSE,warning=FALSE}
+library(dplyr)
+```
+
+
+After the data wrangling portion, a new csv file was created called "revised_league.csv" which has been cleaned and modified with new variables. Using "file.choose()" to obtain absolute filepath for my CSV file. Importing from my STAT 1601's Final Project folder.
+```{r}
+league_csv<-read.csv("C:\\Users\\Allen\\Desktop\\STAT1601\\Final Project\\revised_league.csv")
+```
+
+
+## Linear and Multivariate Regression Models
+### GoldDiff and ExpDiff: The strongest pair
+As with the data visualization part, it would be interesting to see the relationship between the experience difference and gold difference between teams. The pair seemed to have one of the strongest relationships out of the graphs. The correlation coefficient is almost 0.9, which implies a decent positive linear relationship between the two.
+```{r}
+cor(league_csv$GoldDiff,league_csv$ExpDiff)
+```
+Based on the regression model, the following equation is written below. There is a positive slope. The R squared value is about 0.8, which means about 80% of the variability in GoldDiff is explained by the ExpDiff variable.
+$$GoldDiff=1.143*ExpDiff+52.843877$$
+```{r}
+goldexpdiff_model<-lm(GoldDiff~ExpDiff,data=league_csv)
+summary(goldexpdiff_model)
+```
+Time to make a prediction. Suppose the blue team has a lead of 2000 experience, how much gold difference will it have? What about 3000? Suppose blue team has a deficit of 5000 experience, how much gold difference will the game state show?
+```{r}
+goldexpdiffpredict<-data.frame(ExpDiff=c(2000,3000,-5000))
+predict(goldexpdiff_model,goldexpdiffpredict,interval="predict")
+```
+
+### GoldDiff and MinionDiff
+A weaker but still not irrelevant pair was between GoldDiff and MinionDiff. The correlation coefficient is 0.637, which is lower than the previous.
+```{r}
+cor(league_csv$MinionsDiff,league_csv$GoldDiff)
+```
+The equation below. The R squared this time is half of the previous model, it is less than 0.5. This means less than half of golddiff's variability can be explained by the minionsdiff variable. This model is not that good.
+$$GoldDiff=50.6457*MinionsDiff+47.3167$$
+```{r}
+goldminiondiff_model<-lm(GoldDiff~MinionsDiff,data=league_csv)
+summary(goldminiondiff_model)
+```
+**Since the model is not that good, no predictions will be made for this.**
+
+
+### Multivariate for Gold Diff
+Since kills, assists, towers, minions, jungle minions, wards, etc. all give gold to teams, it is time to use a multivariate model. First, subset the dataset to only include the "diff" variables that strictly describe things that give teams gold (implicit variables like experiencediff are excluded now).
+```{r}
+multivar_golddiff<-league_csv%>%select(GoldDiff,TowersDiff,WardsDestDiff,KillDiff,AssistDiff,MinionsDiff,JungleMinDiff)
+multivar_golddiff%>%cor()
+```
+
+Running the multivariate regression model and then using the AIC to remove variables that are not useful.
+```{r message=FALSE,warning=FALSE}
+multivar_golddiff_model<-lm(GoldDiff~.,data=multivar_golddiff)
+library(MASS)
+AIC_golddiff_model<-stepAIC(multivar_golddiff_model,direction="both",trace=FALSE)
+summary(AIC_golddiff_model)
+detach("package:MASS")
+```
+Variables and Equation:
+
+- $g$: total team gold
+- $T$: total towers destroyed
+- $w$: total wards destroyed
+- $k$: total team kills
+- $a$: total team assists
+- $M$: total minions
+- $J$: total jungle minions
+$$\Delta g=1097.82\Delta T+5.5746\Delta w+374.29\Delta k+52.85\Delta a+22.14\Delta M+23.08\Delta J+21.14$$
+
+The r squared value of 0.9511 means that 95% of the total variance in gold difference is explained by these variables. The adjusted r squared value being close to the multiple r squared value means that the model is good. The adjusted R square value, 0.9511, means that the model will produce predictions that are good 95% of the time.
+
+Suppose there is a game in diamond. The blue team has more kills but has lost more towers. Which is more important? How many kills are needed to make it as valuable as a tower? Blue team has gotten 6 more kills but 2 less towers. The tower difference is -2, ward destroyed difference is -5, kill difference is 6, assists difference is 4, minion difference is 30, and the jungle minion difference is -10.
+```{r}
+multipredict1<-data.frame(TowersDiff=-2,WardsDestDiff=-5,KillDiff=6,AssistDiff=4,MinionsDiff=30,JungleMinDiff=-10)
+predict(AIC_golddiff_model,multipredict1,interval="predict")
+```
+Blue team has a slight lead despite being down two towers.
+
+
+Suppose the towers are the same, but blue team has more kills while red team has farmed more minions. Which does this favor? The tower difference is 0, ward destroyed difference is -5, kill difference is 6, assists difference is 4, minion difference is -100, and the jungle minion difference is -30.
+```{r}
+multipredict2<-data.frame(TowersDiff=0,WardsDestDiff=-5,KillDiff=6,AssistDiff=4,MinionsDiff=-100,JungleMinDiff=-30)
+predict(AIC_golddiff_model,multipredict2,interval="predict")
+```
+Red team must farm 100 more minions across the whole team to grasp a small gold lead. Kills may not be everything, but they do contribute a large amount to the gold difference.
+
+
+## Logistic Regression Models
+### What is best for winning?
+One purpose of this data is to try and see what parameters are most conducive to winning. Differences in gold, experience, towers, minions, wards placed, wards destroyed, kills, assists, and jungle minions will be considered. Teamwin column will have to be converted back to 0 (red team win) and 1 (blue team win).
+```{r}
+logistic_csv<-league_csv%>%select(TeamWin,GoldDiff,ExpDiff,TowersDiff,WardsDestDiff,WardsPlacedDiff,KillDiff,AssistDiff,MinionsDiff,JungleMinDiff)
+logistic_csv<-logistic_csv%>%mutate(TeamWin = ifelse(TeamWin=="Blue",1,0))
+```
+Using AIC, it narrowed down the variable list, going from 9 variables to 5 variables. This model shows the variables that contribute to either blue or red team winning. The percentages are quite hard to see because the magnitude of things like gold and exp differences are in the thousands while things like minions are in the hundreds.
+```{r message=FALSE,warning=FALSE}
+library(MASS)
+logit<-glm(TeamWin~.,data=logistic_csv,family="binomial")
+new.logit<-stepAIC(logit,direction="both",trace=FALSE)
+summary(new.logit)
+exp(coef(new.logit))
+detach("package:MASS")
+```
+
+Since the differences are so small, I decided to scale gold,exp by 100 and minions/jungle minions by 10.
+```{r message=FALSE,warning=FALSE}
+logistic_csv2<-league_csv%>%select(TeamWin,GoldDiff,ExpDiff,TowersDiff,MinionsDiff,JungleMinDiff)
+logistic_csv2<-logistic_csv2%>%mutate(TeamWinNum = ifelse(TeamWin=="Blue",1,0))%>%
+  mutate(GoldDiff=GoldDiff/100)%>%mutate(ExpDiff=ExpDiff/100)%>%
+  mutate(MinionsDiff=MinionsDiff/10)%>%mutate(JungleMinDiff=JungleMinDiff/10)%>%
+  select(c(-TeamWin))
+library(MASS)
+logit2<-glm(TeamWinNum~.,data=logistic_csv2,family="binomial")
+new.logit2<-stepAIC(logit2,direction="both",trace=FALSE)
+exp(coef(new.logit2))
+detach("package:MASS")
+
+```
+In both models, the increases in gold/exp differences and jungle minion differences (which means blue team gets more of this advantage) increases the chances for blue team to win. Surprisingly, minions and tower advantages actually decreases blue team's chances to win.
+
+I make up some reasonable values of the game state at 10 minutes, and I use the first model I found, not the one that has been scaled. The first example is with blue team having small advantages in all 5 variables. They have a 61% chance to win. The second team shows blue team with pretty good tower, minion, and jungle minions difference. However, noticeable differences in gold and experience end up predicting that blue team only has a 16% chance to win the game. The third game is actually from a professional game between two teams, FPX and IG in 2019 World Championship. It was a very entertaining game to watch, and by 10 minutes FPX (red team) had a pretty good lead. Despite having a 22% chance to in this game based on the model, IG the blue team actually won in the end.
+```{r}
+game_data<-data.frame(GoldDiff=c(1000,-2000,-2000),ExpDiff=c(750,-1000,-1500),TowersDiff=c(1,2,0),MinionsDiff=c(20,50,11),JungleMinDiff=c(30,50,10))
+predict(new.logit,game_data,type="response")
+```
+
+### What is the best for getting dragon?
+I do another logistic model, but try and see who got the dragon. I filter out games where neither team took dragon. 
+```{r}
+drag_logistic_csv<-league_csv%>%select(Dragon,GoldDiff,ExpDiff,TowersDiff,WardsDestDiff,WardsPlacedDiff,KillDiff,AssistDiff,MinionsDiff,JungleMinDiff)
+drag_logistic_csv<-drag_logistic_csv%>%filter((Dragon=="Blue") | (Dragon=="Red"))%>%mutate(Dragon = ifelse(Dragon=="Blue",1,0))
+```
+Unlike the one with team wins, the AIC decided to keep all 9 variables. Every variable contributed positively towards a team's chances of getting the dragon before 10 minutes. 
+```{r message=FALSE,warning=FALSE}
+library(MASS)
+logit3<-glm(Dragon~.,data=drag_logistic_csv,family="binomial")
+new.logit3<-stepAIC(logit3,direction="both",trace=FALSE)
+summary(new.logit3)
+exp(coef(new.logit3))
+detach("package:MASS")
+```
+First game, blue team leads in every category and has a 97% to take dragon. Interestingly, the second game has blue team having deficits in all variables except for jungle minions and minions. The model still favors blue team to take the dragon with a value of 90%. The third game is still referring to the FPX vs. IG game. I mentioned IG was down by 10 minutes, and had only a 31% chance to get dragon. Right after the 10 minute mark, FPX managed to take the dragon. 
+```{r}
+game_data<-data.frame(GoldDiff=c(1000,-2000,-2000),ExpDiff=c(750,-1000,-1500),TowersDiff=c(1,-2,0),MinionsDiff=c(20,50,11),JungleMinDiff=c(30,50,10),
+                      WardsDestDiff=c(10,-20,-8), WardsPlacedDiff=c(20,-15,10),KillDiff=c(5,-3,-5),AssistDiff=c(1,-1,-10))
+predict(new.logit3,game_data,type="response")
+```
+
+
+# Inference
+
+I found a way to prevent the warnings from including packages like dplyr and MASS, and I have put it in my markdown file. Source: https://rmarkdown.rstudio.com/lesson-3.html
+
+```{r message=FALSE,warning=FALSE}
+library(dplyr)
+```
+
+After the data wrangling portion, a new csv file was created called "revised_league.csv" which has been cleaned and modified with new variables. Using "file.choose()" to obtain absolute filepath for my CSV file. Importing from my STAT 1601's Final Project folder.
+```{r}
+league_csv<-read.csv("C:\\Users\\Allen\\Desktop\\STAT1601\\Final Project\\revised_league.csv")
+```
+
+## Proportions
+### Hypothesis test regarding win chance and team side
+Ideally, whether or not a team plays as the blue team or red team should not matter because the players do not get to choose this. It would be unfair for something out of their control to impact the result of the game in a big way. I want to make a hypothesis test testing if the chances to win as blue team is equal to the chances to win as red team. In other words, is there a fair 50% chance to win the game if you are on blue or if you are on red. Since one is related to other, I will focus on the blue team. I set the null to be the winrate for blue team being 50% (meaning winrate for red also 50%). The alternative will be not equal to 50% (this means one side is somehow more favored).
+
+- Assuming level of significance = 0.05
+- Null hypothesis: the winrate of blue team equals 50%
+- Alternative hypothesis: the winrate of blue team is not equal to 50%.
+
+
+For proportions, we need to count the number of times blue team won and the total number of games.
+```{r}
+table(league_csv$TeamWin)
+nrow(league_csv)
+```
+From above, blue team won 4930 games out of 9879. Now we do the hypothesis test to check the p-value. Two-sided since it is looking at "nonequal".
+```{r}
+prop.test(4930,9879,p=0.50,alternative="two.sided")
+```
+The p-value is 0.8563, which is larger than the significance level of 0.05. This means we fail to reject the null hypothesis. We do not have statistical evidence to conclude that the chance to win a game as the blue team is not 50%. This means there is a chance that the null is true, that the winrate for one team or the other is 50%.
+
+### Confidence interval for dragons
+There is not a status quo for dragons, since there could be games where neither team takes it. Instead, a 95% confidence interval will be found to estimate the proportion of all diamond games in which the blue, red, or neither team took the dragon.
+```{r}
+table(league_csv$Dragon)
+```
+
+For blue team. We are 95% confident that the true percentage/proportion of all diamond league games in which the blue team took dragon before 10 minutes is between 0.3525 and 0.3716.
+```{r}
+prop.test(3576,9879, conf.level=0.95)
+```
+For red team. We are 95% confident that the true percentage/proportion of all diamond league games in which the red team took dragon before 10 minutes is between 0.4034 and 0.4229.
+```{r}
+prop.test(4081,9879, conf.level=0.95)
+```
+For neither team. We are 95% confident that the true percentage/proportion of all diamond league games in which neither team took dragon before 10 minutes is between 0.2167 and 0.2333.
+```{r}
+prop.test(2222,9879, conf.level=0.95)
+```
+
+
+
+## Means
+### Confidence level for blue and red team levels at 10 minutes
+Experience points are a more precise metric, but champion levels are easier to gauge because the numbers are smaller and easier to manage. In a game, champions start at level 1 and end at level 18.
+
+From both the blue and red average level confidence level, it is around 6.9. The lower and upper bounds are extremely close together. We are 95% confident that the true mean of blue team average levels at 10 minutes of all diamond league games is between 6.909986 and 6.922022.
+```{r}
+t.test(league_csv$blueAvgLevel,conf.level=0.95)
+```
+We are 95% confident that the true mean of red team average levels at 10 minutes of all diamond league games is between 6.919295 and 6.931338.
+```{r}
+t.test(league_csv$redAvgLevel,conf.level=0.95)
+```
+
+### Confidence level for gold and minions. 
+It is useful to find the true mean of gold because gold is easier to interpret than experience points. We are 95% confident that the true mean of blue team total gold at 10 minutes of all diamond league games is between 16473.17 and 16533.74.
+```{r}
+t.test(league_csv$blueTotalGold,conf.level=0.95)
+```
+We are 95% confident that the true mean of blue team total gold at 10 minutes of all diamond league games is between 16459.64 and 16518.44.
+```{r}
+t.test(league_csv$redTotalGold,conf.level=0.95)
+```
+For both teams, dividing it by 5, this means the average gold per player is a little over 3000. For comparison, a complete, end-game item is generally around 3500 gold in price. Players also delay these end-game items to buy intermediate items that do not contribute to the end-game item, a short-term gain. This means that players at 10 minutes are about 75% of the way to completing one finished end-game item.
+
+In league, 1 role is the support, who does not farm minions. Their role is to protect the marksman and ensure that the marksman is obtaining minions and resources. The jungler also does not take lane minions. We are 95% confident that the true mean of blue team total lane minions at 10 minutes of all diamond league games is between 216.2685 and 217.1307.
+```{r}
+t.test(league_csv$blueMinions,conf.level=0.95)
+```
+We are 95% confident that the true mean of red team total lane minions at 10 minutes of all diamond league games is between 216.9171 and 217.7814.
+```{r}
+t.test(league_csv$redMinions,conf.level=0.95)
+```
+Again, both teams have similar confidence intervals. Dividing the total estimates by 3 (since the support does not take minions and the jungler takes jungle minions, not lane minions), the average per player estimate of minion count at 10 minutes is a little more than 70. If a player plays perfectly, then they should have 10 minions per minute, or 100 by 10 minutes. For diamond players, who are very good, about 80 is deemed to be acceptable. However, this value can go down because of other activities away from lane (time waiting for respawn, going to help take dragon or herald, helping out a teammate in another lane.)
+
+
+
